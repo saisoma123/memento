@@ -1,0 +1,13 @@
+[project]
+name = "memento"
+version = "0.1.0"
+description = "Composable memory runtime for LLM agents with verifiable, forkable, and replayable logs."
+authors = [{ name="Your Name", email="you@example.com" }]
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
