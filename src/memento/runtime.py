@@ -72,6 +72,22 @@ class Region:
         new_region.hashes = list(self.hashes)
         return new_region
 
+    def merge(self, other: 'Region', name: Optional[str] = None) -> 'Region':
+        """Merge two regions into a new region, deduplicating identical events."""
+        merge_name = name or f"{self.name}_MERGED_{other.name}"
+        merged = Region(merge_name, meta={**self.meta, **other.meta})
+
+        combined = self.events + other.events
+        seen_hashes = set()
+        for event in sorted(combined, key=lambda e: e["timestamp"]):
+            h = structural_hash(event)
+            if h not in seen_hashes:
+                merged.events.append(event)
+                merged.hashes.append(h)
+                seen_hashes.add(h)
+
+        return merged
+
     def diff(self, other: 'Region') -> List[str]:
         return [h for h in other.hashes if h not in self.hashes]
 
@@ -185,5 +201,14 @@ if __name__ == "__main__":
     print(r2.summary())
     print("Diff from fork:", r1.diff(r2))
 
-    Region.gc(keep=["RetryPlanner"])
+    r3 = r1.fork("AlternatePlanner")
+    r3.observe("User updated loan amount")
+    r3.effect("loan_api", "amount: 50k")
+
+    r_merged = r2.merge(r3, "UnifiedPlanner")
+    print(r_merged.summary())
+    for e in r_merged.replay():
+        print("-", e["op"], e["content"])
+
+    Region.gc(keep=["UnifiedPlanner"])
     print("Remaining heads:", list(Region.HEADS.keys()))
