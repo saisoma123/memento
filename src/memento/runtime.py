@@ -1,5 +1,5 @@
 # memento_mvp_runtime.py
-# MVP of the Memento LLM memory runtime (log-based, Merkle-DAG, forkable)
+# MVP of the Memento LLM memory runtime (log-based, Merkle-DAG, forkable, GC/versioning)
 
 import hashlib
 import json
@@ -27,6 +27,8 @@ def merkle_root(hashes: List[str]) -> str:
     return hashes[0]
 
 class Region:
+    HEADS: Dict[str, 'Region'] = {}
+
     def __init__(self, name: str, parent: Optional['Region'] = None, meta: Optional[Dict[str, str]] = None):
         self.name = name
         self.parent = parent
@@ -34,6 +36,7 @@ class Region:
         self.events: List[dict] = []
         self.hashes: List[str] = []
         self.created_at = time.time()
+        Region.HEADS[self.name] = self
 
     def observe(self, content: str):
         self._append_event("observe", content)
@@ -57,6 +60,7 @@ class Region:
         }
         self.events.append(event)
         self.hashes.append(structural_hash(event))
+        Region.HEADS[self.name] = self  # Update HEAD
 
     def root_hash(self) -> str:
         return merkle_root(self.hashes)
@@ -94,6 +98,7 @@ class Region:
                 region.events.append(event)
                 region.hashes.append(structural_hash(event))
                 region.meta = event.get("meta", {})
+        Region.HEADS[name] = region
         return region
 
     def save_to_sqlite(self, db_path: str):
@@ -107,10 +112,17 @@ class Region:
                         meta TEXT,
                         hash TEXT
                      )''')
+        c.execute('''CREATE TABLE IF NOT EXISTS heads (
+                        region TEXT PRIMARY KEY,
+                        timestamp REAL
+                     )''')
         for event, h in zip(self.events, self.hashes):
             c.execute('''INSERT INTO events (region, timestamp, op, content, meta, hash)
                          VALUES (?, ?, ?, ?, ?, ?)''',
                       (self.name, event["timestamp"], event["op"], event["content"], json.dumps(event["meta"]), h))
+        # Update HEAD
+        c.execute('''INSERT OR REPLACE INTO heads (region, timestamp)
+                     VALUES (?, ?)''', (self.name, self.created_at))
         conn.commit()
         conn.close()
 
@@ -133,8 +145,20 @@ class Region:
             region.events.append(event)
             region.hashes.append(structural_hash(event))
             region.meta = meta
+        Region.HEADS[region_name] = region
         conn.close()
         return region
+
+    @classmethod
+    def gc(cls, keep: List[str]):
+        """Garbage collect unused region versions not in keep list."""
+        to_delete = [r for r in cls.HEADS if r not in keep]
+        for r in to_delete:
+            del cls.HEADS[r]
+
+    @classmethod
+    def get_head(cls, name: str) -> Optional['Region']:
+        return cls.HEADS.get(name)
 
 # Sample usage
 if __name__ == "__main__":
@@ -160,3 +184,6 @@ if __name__ == "__main__":
     r2.effect("income_api", "income: 80k")
     print(r2.summary())
     print("Diff from fork:", r1.diff(r2))
+
+    Region.gc(keep=["RetryPlanner"])
+    print("Remaining heads:", list(Region.HEADS.keys()))

@@ -1,0 +1,4 @@
+{"op": "observe", "content": "User requested a loan", "timestamp": 1752964561.8038073, "agent": "Planner", "meta": {"agent_type": "planner", "task": "loan_approval"}}
+{"op": "plan", "content": "Check credit score and income", "timestamp": 1752964561.804362, "agent": "Planner", "meta": {"agent_type": "planner", "task": "loan_approval"}}
+{"op": "effect", "content": "credit_api: score: 720", "timestamp": 1752964561.8043907, "agent": "Planner", "meta": {"agent_type": "planner", "task": "loan_approval"}}
+{"op": "summarize", "content": "User is eligible", "timestamp": 1752964561.8044024, "agent": "Planner", "meta": {"agent_type": "planner", "task": "loan_approval"}}
