@@ -5,6 +5,7 @@ import hashlib
 import json
 import time
 import os
+import sqlite3
 from typing import List, Optional, Dict
 
 def structural_hash(event: dict) -> str:
@@ -95,6 +96,46 @@ class Region:
                 region.meta = event.get("meta", {})
         return region
 
+    def save_to_sqlite(self, db_path: str):
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS events (
+                        region TEXT,
+                        timestamp REAL,
+                        op TEXT,
+                        content TEXT,
+                        meta TEXT,
+                        hash TEXT
+                     )''')
+        for event, h in zip(self.events, self.hashes):
+            c.execute('''INSERT INTO events (region, timestamp, op, content, meta, hash)
+                         VALUES (?, ?, ?, ?, ?, ?)''',
+                      (self.name, event["timestamp"], event["op"], event["content"], json.dumps(event["meta"]), h))
+        conn.commit()
+        conn.close()
+
+    @classmethod
+    def load_from_sqlite(cls, db_path: str, region_name: str) -> 'Region':
+        region = cls(region_name)
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        c.execute('''SELECT timestamp, op, content, meta FROM events WHERE region = ? ORDER BY timestamp''', (region_name,))
+        for row in c.fetchall():
+            timestamp, op, content, meta_json = row
+            meta = json.loads(meta_json)
+            event = {
+                "timestamp": timestamp,
+                "op": op,
+                "content": content,
+                "meta": meta,
+                "agent": region_name
+            }
+            region.events.append(event)
+            region.hashes.append(structural_hash(event))
+            region.meta = meta
+        conn.close()
+        return region
+
 # Sample usage
 if __name__ == "__main__":
     r1 = Region("Planner", meta={"agent_type": "planner", "task": "loan_approval"})
@@ -106,8 +147,13 @@ if __name__ == "__main__":
     print(r1.summary())
 
     r1.save_to_disk("logs")
+    r1.save_to_sqlite("memento.db")
+
     loaded = Region.load_from_disk("logs/Planner.jsonl")
-    print("Loaded:", loaded.summary())
+    print("Loaded from JSONL:", loaded.summary())
+
+    loaded_sqlite = Region.load_from_sqlite("memento.db", "Planner")
+    print("Loaded from SQLite:", loaded_sqlite.summary())
 
     r2 = r1.fork("RetryPlanner")
     r2.plan("Try with updated income")
