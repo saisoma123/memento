@@ -4,6 +4,7 @@
 import hashlib
 import json
 import time
+import os
 from typing import List, Optional, Dict
 
 def structural_hash(event: dict) -> str:
@@ -25,9 +26,10 @@ def merkle_root(hashes: List[str]) -> str:
     return hashes[0]
 
 class Region:
-    def __init__(self, name: str, parent: Optional['Region'] = None):
+    def __init__(self, name: str, parent: Optional['Region'] = None, meta: Optional[Dict[str, str]] = None):
         self.name = name
         self.parent = parent
+        self.meta = meta or {}
         self.events: List[dict] = []
         self.hashes: List[str] = []
         self.created_at = time.time()
@@ -49,7 +51,8 @@ class Region:
             "op": op,
             "content": content,
             "timestamp": time.time(),
-            "agent": self.name
+            "agent": self.name,
+            "meta": self.meta
         }
         self.events.append(event)
         self.hashes.append(structural_hash(event))
@@ -59,7 +62,7 @@ class Region:
 
     def fork(self, name: Optional[str] = None) -> 'Region':
         fork_name = name or f"{self.name}-fork"
-        new_region = Region(fork_name, parent=self)
+        new_region = Region(fork_name, parent=self, meta=self.meta.copy())
         new_region.events = list(self.events)
         new_region.hashes = list(self.hashes)
         return new_region
@@ -73,15 +76,38 @@ class Region:
     def summary(self) -> str:
         return f"Region '{self.name}' with {len(self.events)} events. Root hash: {self.root_hash()}"
 
+    def save_to_disk(self, directory: str):
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, f"{self.name}.jsonl")
+        with open(path, "w") as f:
+            for event in self.events:
+                f.write(json.dumps(event) + "\n")
+
+    @classmethod
+    def load_from_disk(cls, path: str) -> 'Region':
+        name = os.path.splitext(os.path.basename(path))[0]
+        region = cls(name)
+        with open(path, "r") as f:
+            for line in f:
+                event = json.loads(line.strip())
+                region.events.append(event)
+                region.hashes.append(structural_hash(event))
+                region.meta = event.get("meta", {})
+        return region
+
 # Sample usage
 if __name__ == "__main__":
-    r1 = Region("Planner")
+    r1 = Region("Planner", meta={"agent_type": "planner", "task": "loan_approval"})
     r1.observe("User requested a loan")
     r1.plan("Check credit score and income")
     r1.effect("credit_api", "score: 720")
     r1.summarize("User is eligible")
 
     print(r1.summary())
+
+    r1.save_to_disk("logs")
+    loaded = Region.load_from_disk("logs/Planner.jsonl")
+    print("Loaded:", loaded.summary())
 
     r2 = r1.fork("RetryPlanner")
     r2.plan("Try with updated income")
