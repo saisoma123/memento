@@ -1,12 +1,13 @@
-# memento/region_store.py
-from typing import Dict, Optional
-from .region import Region
 import json
 import os
+from typing import Dict, Optional
+from src.memento.core import MemoryGraph
+from src.memento.region import Region
 
 class RegionStore:
     def __init__(self):
-        self.regions: Dict[str, Region] = {}
+        self.graph = MemoryGraph()
+        self.regions: Dict = {}
 
     def add(self, region: Region):
         self.regions[region.name] = region
@@ -18,7 +19,7 @@ class RegionStore:
         if name in self.regions:
             del self.regions[name]
 
-    def list(self) -> Dict[str, Region]:
+    def list(self) -> Dict:
         return self.regions
 
     def save_to_json(self, path: str):
@@ -33,8 +34,9 @@ class RegionStore:
         with open(path, 'r') as f:
             data = json.load(f)
             for name, region_dict in data.items():
-                store.add(Region.from_dict(region_dict))
+                region = Region.from_dict(region_dict)
+                store.add(region)
         return store
 
     def summary(self) -> str:
-        return f"RegionStore with {len(self.regions)} region(s):\n" + "\n".join(f"- {r.name} ({r.head[:8]})" for r in self.regions.values())
+        return f"RegionStore with {len(self.regions)} region(s):\n" + "\n".join(f"- {r.name} ({list(r.heads)[0][:8] if r.heads else 'No Head'})" for r in self.regions.values())
