@@ -120,6 +120,7 @@ class Region:
     def save_to_sqlite(self, db_path: str):
         conn = sqlite3.connect(db_path)
         c = conn.cursor()
+        c.execute('DELETE FROM events WHERE region = ?', (self.name,))
         c.execute('''CREATE TABLE IF NOT EXISTS events (
                         region TEXT,
                         timestamp REAL,
